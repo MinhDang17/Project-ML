@@ -1,0 +1,92 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+
+# --- PHẦN 1: GIẢ LẬP DỮ LIỆU (DATA SIMULATION) ---
+# Giả sử chúng ta có 1000 mẫu vật liệu Polymer Nanocomposites
+n_samples = 1000
+np.random.seed(42)
+
+# Các biến đầu vào (Features)
+# 1. Hàm lượng hạt độn (% khối lượng): 0% đến 10%
+filler_content = np.random.uniform(0, 10, n_samples)
+# 2. Kích thước hạt nano (nm): 10nm đến 100nm
+particle_size = np.random.uniform(10, 100, n_samples)
+# 3. Nhiệt độ gia công (C): 180C đến 250C
+temperature = np.random.uniform(180, 250, n_samples)
+
+# Biến mục tiêu (Target) - Tính chất cơ học: Độ bền kéo (Tensile Strength - MPa)
+# Giả lập công thức vật lý đơn giản + nhiễu (noise)
+# Hàm lượng tăng thì bền tăng, nhưng hạt to quá thì bền giảm
+tensile_strength = (30 + 5 * filler_content - 0.1 * particle_size + 
+                    0.05 * temperature + np.random.normal(0, 2, n_samples))
+
+# Tạo DataFrame
+df = pd.DataFrame({
+    'Filler_Content_%': filler_content,
+    'Particle_Size_nm': particle_size,
+    'Temperature_C': temperature,
+    'Tensile_Strength_MPa': tensile_strength
+})
+
+print("Dữ liệu mẫu (5 dòng đầu):")
+print(df.head())
+print("-" * 30)
+
+# --- PHẦN 2: TIỀN XỬ LÝ (PREPROCESSING) ---
+X = df.drop('Tensile_Strength_MPa', axis=1)
+y = df['Tensile_Strength_MPa']
+
+# Chia tập train/test (80/20)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Chuẩn hóa dữ liệu (Scaling) - Rất quan trọng cho Neural Networks
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# --- PHẦN 3: MÔ HÌNH SCIKIT-LEARN (RANDOM FOREST) ---
+print("\n--- Training Scikit-learn Model (Random Forest) ---")
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train) # Random Forest không nhất thiết cần scale, nhưng dùng cũng không sao
+
+y_pred_rf = rf_model.predict(X_test)
+print(f"Random Forest R2 Score: {r2_score(y_test, y_pred_rf):.4f}")
+print(f"Random Forest MSE: {mean_squared_error(y_test, y_pred_rf):.4f}")
+
+# --- PHẦN 4: MÔ HÌNH TENSORFLOW (NEURAL NETWORK) ---
+print("\n--- Training TensorFlow Model (Deep Learning) ---")
+model = Sequential([
+    Dense(64, activation='relu', input_shape=(X_train_scaled.shape[1],)), # Lớp ẩn 1
+    Dense(32, activation='relu'), # Lớp ẩn 2
+    Dense(1) # Lớp đầu ra (Regression -> 1 nơ-ron, không activation)
+])
+
+model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+# Huấn luyện mô hình
+history = model.fit(X_train_scaled, y_train, epochs=50, batch_size=32, verbose=0, validation_split=0.2)
+
+# Đánh giá
+loss, mae = model.evaluate(X_test_scaled, y_test, verbose=0)
+y_pred_tf = model.predict(X_test_scaled).flatten()
+
+print(f"TensorFlow R2 Score: {r2_score(y_test, y_pred_tf):.4f}")
+print(f"TensorFlow MSE: {loss:.4f}")
+
+# --- SO SÁNH KẾT QUẢ ---
+print("\n--- So sánh dự đoán trên 1 mẫu thử ngẫu nhiên ---")
+sample_idx = 0
+true_val = y_test.iloc[sample_idx]
+rf_val = y_pred_rf[sample_idx]
+tf_val = y_pred_tf[sample_idx]
+
+print(f"Giá trị thực tế: {true_val:.2f} MPa")
+print(f"Scikit-learn dự đoán: {rf_val:.2f} MPa")
+print(f"TensorFlow dự đoán: {tf_val:.2f} MPa")
